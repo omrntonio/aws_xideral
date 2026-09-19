@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import SQLAlchemyError
+import plotly.express as px
 
 # -----------------------------------
 # MySQL Configuration
@@ -73,7 +74,7 @@ st.set_page_config(
 
 st.title("TLC Trip Record Data")
 st.write(
-    "Explore the data stored in your MySQL database."
+    "Datos extraidos de https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page"
 )
 
 try:
@@ -84,79 +85,181 @@ try:
     with engine.connect() as connection:
         connection.execute(text("SELECT 1"))
 
-    st.success("Connected to MySQL successfully!")
+    st.success("Conectado a MySQL exitosamente!")
 
     # Get tables
     tables = get_tables(engine)
 
     if not tables:
 
-        st.warning("No tables found in the database.")
+        st.warning("No se pudieron encontrar tablas en la base de datos.")
 
     else:
+        tab1, tab2, tab3 = st.tabs([
+            "Tabla",
+            "Grafica",
+            "Columnas Yellow Taxi"
+        ])
+        with tab1:
 
-        st.sidebar.header("Database Tables")
+            st.sidebar.header("Tabla de la base de datos (⌐■_■)")
 
-        selected_table = st.sidebar.selectbox(
-            "Select a table",
-            tables
+            selected_table = st.sidebar.selectbox(
+                "Selecciona una tabla",
+                tables
+            )
+
+            row_limit = st.sidebar.slider(
+                "Numero de datos a cargar",
+                min_value=10,
+                max_value=1000,
+                value=100,
+                step=10
+            )
+
+            st.header(f"Tabla: {selected_table}")
+
+            # Load data
+            df = load_table(
+                engine,
+                selected_table,
+                row_limit
+            )
+
+            # Display information
+            st.subheader("Información de la Tabla")
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.metric("Datos Cargados", len(df))
+
+            with col2:
+                st.metric("Columnas", len(df.columns))
+
+            # Display dataframe
+            st.subheader("Datos")
+
+            st.dataframe(
+                df,
+                use_container_width=True
+            )
+
+        with tab2:
+
+            columns = df.columns.tolist()
+
+            chart_type = st.selectbox(
+            "Selecciona tipo de gráfica",
+            [
+                "Scatter Plot",
+                "Line Chart",
+                "Bar Chart",
+                "Histogram",
+                "Heatmap"
+            ]
         )
 
-        row_limit = st.sidebar.slider(
-            "Number of rows",
-            min_value=10,
-            max_value=1000,
-            value=100,
-            step=10
-        )
+            # Select X-axis
+            x_column = st.selectbox(
+                "Selecciona columna del eje X",
+                columns
+            )
 
-        st.header(f"Table: {selected_table}")
+            # Select Y-axis when required
+            if chart_type != "Histograma":
 
-        # Load data
-        df = load_table(
-            engine,
-            selected_table,
-            row_limit
-        )
+                y_column = st.selectbox(
+                    "Selecciona columna del eje Y",
+                    columns
+                )
 
-        # Display information
-        st.subheader("Table Information")
+            # Generate chart
+            if st.button("Generar Gráfica"):
 
-        col1, col2 = st.columns(2)
+                try:
 
-        with col1:
-            st.metric("Rows Loaded", len(df))
+                    if chart_type == "Scatter Plot":
 
-        with col2:
-            st.metric("Columns", len(df.columns))
+                        fig = px.scatter(
+                            df,
+                            x=x_column,
+                            y=y_column,
+                            title=f"{y_column} vs {x_column}"
+                        )
 
-        # Display dataframe
-        st.subheader("Data")
+                    elif chart_type == "Line Chart":
 
-        st.dataframe(
-            df,
-            use_container_width=True
-        )
+                        fig = px.line(
+                            df,
+                            x=x_column,
+                            y=y_column,
+                            title=f"{y_column} over {x_column}"
+                        )
 
-        # Display data types
-        st.subheader("Column Data Types")
+                    elif chart_type == "Bar Chart":
 
-        st.dataframe(
-            pd.DataFrame({
-                "Column": df.columns,
-                "Data Type": df.dtypes.astype(str).values
-            }),
-            use_container_width=True
-        )
+                        fig = px.bar(
+                            df,
+                            x=x_column,
+                            y=y_column,
+                            title=f"{y_column} by {x_column}"
+                        )
+
+                    elif chart_type == "Histogram":
+
+                        fig = px.histogram(
+                            df,
+                            x=x_column,
+                            title=f"Distribution of {x_column}"
+                        )
+
+                    elif chart_type == "Heatmap":
+
+                        fig = px.density_heatmap(
+                            df,
+                            x=x_column,
+                            y=y_column,
+                            title=f"Heatmap: {x_column} vs {y_column}"
+                        )
+
+                    st.plotly_chart(
+                        fig,
+                        use_container_width=True
+                    )
+
+                except Exception as e:
+
+                    st.error(f"Unable to create chart: {e}")
+
+        with tab3:
+            pdf_url = "https://www.nyc.gov/assets/tlc/downloads/pdf/data_dictionary_trip_records_yellow.pdf"
+
+            st.subheader("Yellow Taxi Data Dictionary")
+
+            st.markdown(
+                f"""
+                <iframe
+                    src="{pdf_url}"
+                    width="100%"
+                    height="700"
+                    style="border: none;">
+                </iframe>
+                """,
+                unsafe_allow_html=True
+            )
+
+        
+            
 
 except SQLAlchemyError as e:
 
-    st.error("Database connection or query failed.")
+    st.error("Conexión a la base de datos fallida.")
 
     st.exception(e)
 
 except Exception as e:
 
-    st.error("An unexpected error occurred.")
+    st.error("Error.")
 
     st.exception(e)
